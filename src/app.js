@@ -5,6 +5,7 @@ const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require(
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
 const { calcProfit, optimize } = require('./modules/finance/finance');
+const { createParentsRouter } = require('./modules/parents/parents.routes');
 
 const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
@@ -80,93 +81,9 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
-  app.post('/parents', ...staffMgr, async (req, res) => {
-    const { username, password, name, phone } = req.body || {};
-    if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
-    if (await store.one('users', { username })) throw conflict('Username already exists');
-    const u = await store.insert('users', {
-      username, name, phone: phone || null, role: 'parent', passwordHash: hashPassword(password),
-    }, actor(req));
-    res.status(201).json(publicUser(u));
-  });
+   // ---------- parents ----------
+  app.use('/parents', createParentsRouter(store));
 
-  app.get('/parents', ...staffMgr, async (req, res) => {
-    res.json((await store.where('users', { role: 'parent' })).map(publicUser));
-  });
-
-    app.get('/parents/:id', ...staffMgr, async (req, res) => {
-  const parent = await store.get('users', req.params.id);
-
-  if (!parent || parent.role !== 'parent') {
-    throw notFound('Parent not found');
-  }
-
-  res.json(publicUser(parent));
-});
-
-  // Parent editing
-  app.patch('/parents/:id', ...staffMgr, async (req, res) => {
-    const parent = await store.get('users', req.params.id);
-
-    if (!parent || parent.role !== 'parent') {
-      throw notFound('Parent not found');
-    }
-
-    const { name, phone } = req.body || {};
-    const patch = {};
-
-    if (name !== undefined) {
-      if (!isStr(name)) {
-        throw bad('name must be a non-empty string');
-      }
-      patch.name = name;
-    }
-
-    if (phone !== undefined) {
-      if (phone !== null && !isStr(phone)) {
-        throw bad('phone must be a string or null');
-      }
-      patch.phone = phone;
-    }
-
-    if (Object.keys(patch).length === 0) {
-      throw bad('No valid fields to update');
-    }
-
-    const updated = await store.update(
-      'users',
-      parent.id,
-      patch,
-      actor(req)
-    );
-
-    res.json(publicUser(updated));
-  });
-
-// Delete parents
-  app.delete('/parents/:id', ...staffMgr, async (req, res) => {
-    const parent = await store.get('users', req.params.id);
-
-    if (!parent || parent.role !== 'parent') {
-      throw notFound('Parent not found');
-    }
-
-    const children = await store.where('children', {
-      parentId: parent.id
-    });
-
-    if (children.length > 0) {
-      throw conflict('Cannot delete parent with children');
-    }
-
-    await store.remove('users', parent.id, actor(req));
-
-    res.status(200).json({
-      message: 'Parent deleted successfully'
-    });
-  });
-
-  
   // ---------- staff (вихователі, помічники, викладачі) ----------
   app.post('/staff', ...staffAdmin, async (req, res) => {
     const { name, type, subjects, salary, username, password } = req.body || {};
