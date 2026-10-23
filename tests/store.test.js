@@ -1,5 +1,5 @@
 'use strict';
-const { Store } = require('../src/store');
+const { Store } = require('../src/modules/store/store');
 const { createPool, migrate, DEFAULT_URL } = require('../src/db');
 const { DEFAULT_SETTINGS } = require('../src/config');
 const { setup, getPool, closePool } = require('./helpers');
