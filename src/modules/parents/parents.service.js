@@ -1,4 +1,3 @@
-
 'use strict';
 
 const { hashPassword } = require('../auth/auth');
