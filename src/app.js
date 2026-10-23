@@ -1,10 +1,11 @@
 'use strict';
 const express = require('express');
-const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./auth');
+const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
-const { ageOf, calcBilling } = require('./billing');
-const { generateSchedule, viewSchedule, teacherView } = require('./schedule');
-const { calcProfit, optimize } = require('./finance');
+const { ageOf, calcBilling } = require('./modules/billing/billing');
+const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
+const { calcProfit, optimize } = require('./modules/finance/finance');
+const { createParentsRouter } = require('./modules/parents/parents.routes');
 
 const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
@@ -80,19 +81,8 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
-  app.post('/parents', ...staffMgr, async (req, res) => {
-    const { username, password, name, phone } = req.body || {};
-    if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
-    if (await store.one('users', { username })) throw conflict('Username already exists');
-    const u = await store.insert('users', {
-      username, name, phone: phone || null, role: 'parent', passwordHash: hashPassword(password),
-    }, actor(req));
-    res.status(201).json(publicUser(u));
-  });
-
-  app.get('/parents', ...staffMgr, async (req, res) => {
-    res.json((await store.where('users', { role: 'parent' })).map(publicUser));
-  });
+   // ---------- parents ----------
+  app.use('/parents', createParentsRouter(store));
 
   // ---------- staff (вихователі, помічники, викладачі) ----------
   app.post('/staff', ...staffAdmin, async (req, res) => {

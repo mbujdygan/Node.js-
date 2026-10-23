@@ -1,5 +1,5 @@
 'use strict';
-const { DEFAULT_SETTINGS } = require('./config');
+const { DEFAULT_SETTINGS } = require('../../config');
 
 // Колекції -> дозволені поля (camelCase у коді, snake_case у БД)
 const TABLES = {

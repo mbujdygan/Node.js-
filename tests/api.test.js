@@ -69,6 +69,76 @@ describe('managers & parents', () => {
   });
 });
 
+
+describe('parents CRUD', () => {
+  test('GET - отримання батька за ID', async () => {
+    const r = await call('get', `/parents/${ids.parent}`, ctx.admin);
+
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe('Mom');
+    expect(r.body.passwordHash).toBeUndefined();
+
+    expect((await call('get', '/parents/999', ctx.admin)).status).toBe(404);
+  });
+
+  test('PATCH - редагування батька', async () => {
+    const r = await call('patch', `/parents/${ids.parent}`, ctx.admin, {
+      name: 'Updated Mom',
+      phone: '0981234567'
+    });
+
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe('Updated Mom');
+    expect(r.body.phone).toBe('0981234567');
+
+    expect((await call('patch', `/parents/${ids.parent}`, ctx.admin, {
+      name: ''
+    })).status).toBe(400);
+
+    expect((await call('patch', `/parents/${ids.parent}`, ctx.admin, {
+      phone: 123
+    })).status).toBe(400);
+
+    expect((await call('patch', `/parents/${ids.parent}`, ctx.admin, {
+    })).status).toBe(400);
+
+    expect((await call('patch', '/parents/999', ctx.admin, {
+      name: 'Test'
+    })).status).toBe(404);
+  });
+
+  test('DELETE - видалення батька', async () => {
+    // Батька з дитиною видаляти не можна
+    expect((await call('delete', `/parents/${ids.parent}`, ctx.admin)).status).toBe(409);
+
+    // Створюємо батька без дітей
+    const created = await call('post', '/parents', ctx.admin, {
+      username: 'testparent',
+      password: 'pw',
+      name: 'Test Parent'
+    });
+
+    expect(created.status).toBe(201);
+
+    const id = created.body.id;
+
+    expect((await call('delete', `/parents/${id}`, ctx.admin)).status).toBe(200);
+    expect((await call('get', `/parents/${id}`, ctx.admin)).status).toBe(404);
+    expect((await call('delete', `/parents/${id}`, ctx.admin)).status).toBe(404);
+  });
+
+  test('Доступ до CRUD лише для адміністратора та менеджера', async () => {
+    const parentToken = await ctx.login('mom', 'pw');
+
+    expect((await call('get', `/parents/${ids.parent}`, parentToken)).status).toBe(403);
+    expect((await call('patch', `/parents/${ids.parent}`, parentToken, {
+      name: 'Test'
+    })).status).toBe(403);
+    expect((await call('delete', `/parents/${ids.parent}`, parentToken)).status).toBe(403);
+  });
+});
+
+
 describe('staff', () => {
   test('валідація', async () => {
     const a = ctx.admin;
