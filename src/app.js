@@ -6,8 +6,8 @@ const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
 const { calcProfit, optimize } = require('./modules/finance/finance');
 const { createParentsRouter } = require('./modules/parents/parents.routes');
+const { createStaffRouter } = require('./modules/staff/staff.routes');
 
-const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
 const isStr = (v) => typeof v === 'string' && v.trim().length > 0;
 const publicUser = ({ passwordHash, ...u }) => u;
@@ -81,66 +81,11 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
-   // ---------- parents ----------
+  // ---------- parents ----------
   app.use('/parents', createParentsRouter(store));
 
-  // ---------- staff (вихователі, помічники, викладачі) ----------
-  app.post('/staff', ...staffAdmin, async (req, res) => {
-    const { name, type, subjects, salary, username, password } = req.body || {};
-    if (!isStr(name)) throw bad('name is required');
-    if (!STAFF_TYPES.includes(type)) throw bad(`type must be one of ${STAFF_TYPES.join(', ')}`);
-    if (salary !== undefined && !(Number(salary) >= 0)) throw bad('salary must be a non-negative number');
-    let subs = [];
-    if (type === 'subject') {
-      if (!Array.isArray(subjects) || !subjects.length
-        || !subjects.every((x) => s().subjects.includes(x))) {
-        throw bad(`subjects must be a non-empty subset of ${s().subjects.join(', ')}`);
-      }
-      subs = subjects;
-    }
-    if ((username || password) && !(isStr(username) && isStr(password))) throw bad('username and password must be set together');
-    if (username && await store.one('users', { username })) throw conflict('Username already exists');
-    const st = await store.insert('staff', { name, type, subjects: subs, salary: salary === undefined ? undefined : Number(salary) }, actor(req));
-    if (username) {
-      const u = await store.insert('users', { username, name, role: 'teacher', staffId: st.id, passwordHash: hashPassword(password) }, actor(req));
-      return res.status(201).json({ ...st, userId: u.id });
-    }
-    return res.status(201).json(st);
-  });
-
-  app.get('/staff', ...staffMgr, async (req, res) => res.json(await store.list('staff')));
-
-  app.patch('/staff/:id', ...staffAdmin, async (req, res) => {
-    const st = await store.get('staff', req.params.id);
-    if (!st) throw notFound('Staff not found');
-    const { name, subjects, salary } = req.body || {};
-    const patch = {};
-    if (name !== undefined) { if (!isStr(name)) throw bad('name must be a string'); patch.name = name; }
-    if (salary !== undefined) { if (!(Number(salary) >= 0)) throw bad('salary must be a non-negative number'); patch.salary = Number(salary); }
-    if (subjects !== undefined) {
-      if (st.type !== 'subject' || !Array.isArray(subjects) || !subjects.length
-        || !subjects.every((x) => s().subjects.includes(x))) throw bad('invalid subjects');
-      patch.subjects = subjects;
-    }
-    res.json(await store.update('staff', st.id, patch, actor(req)));
-  });
-
-  app.delete('/staff/:id', ...staffAdmin, async (req, res) => {
-    const st = await store.get('staff', req.params.id);
-    if (!st) throw notFound('Staff not found');
-    const used = (await store.list('groups')).some((g) => g.educatorId === st.id || g.assistantId === st.id);
-    if (used) throw conflict('Staff member is assigned to a group');
-    await store.remove('staff', st.id, actor(req));
-    res.status(204).end();
-  });
-
-  app.get('/staff/:id/schedule', authenticate, async (req, res) => {
-    const st = await store.get('staff', req.params.id);
-    if (!st) throw notFound('Staff not found');
-    const own = req.user.role === 'teacher' && req.user.staffId === st.id;
-    if (!own && !['admin', 'manager'].includes(req.user.role)) throw forbidden('Not your schedule');
-    res.json(teacherView(await store.getSchedule(), st.id));
-  });
+  // ---------- staff ----------
+  app.use('/staff', createStaffRouter(store));
 
   // ---------- groups ----------
   app.post('/groups', ...staffAdmin, async (req, res) => {
