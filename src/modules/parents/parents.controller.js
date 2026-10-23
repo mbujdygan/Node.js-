@@ -1,4 +1,3 @@
-
 'use strict';
 
 const { createParentsService } = require('./parents.service');
