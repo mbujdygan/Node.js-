@@ -1,5 +1,5 @@
 'use strict';
-const { DAY } = require('./config');
+const { DAY } = require('../../config');
 
 const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const slotTime = (i) => ({
