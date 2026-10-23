@@ -104,7 +104,7 @@ function createApp(store) {
   res.json(publicUser(parent));
 });
 
-  
+  // Parent editing
   app.patch('/parents/:id', ...staffMgr, async (req, res) => {
     const parent = await store.get('users', req.params.id);
 
@@ -143,7 +143,30 @@ function createApp(store) {
     res.json(publicUser(updated));
   });
 
+// Delete parents
+  app.delete('/parents/:id', ...staffMgr, async (req, res) => {
+    const parent = await store.get('users', req.params.id);
 
+    if (!parent || parent.role !== 'parent') {
+      throw notFound('Parent not found');
+    }
+
+    const children = await store.where('children', {
+      parentId: parent.id
+    });
+
+    if (children.length > 0) {
+      throw conflict('Cannot delete parent with children');
+    }
+
+    await store.remove('users', parent.id, actor(req));
+
+    res.status(200).json({
+      message: 'Parent deleted successfully'
+    });
+  });
+
+  
   // ---------- staff (вихователі, помічники, викладачі) ----------
   app.post('/staff', ...staffAdmin, async (req, res) => {
     const { name, type, subjects, salary, username, password } = req.body || {};
