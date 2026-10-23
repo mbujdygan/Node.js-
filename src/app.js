@@ -80,6 +80,16 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
+  app.get('/parents/:id', ...staffMgr, async (req, res) => {
+  const parent = await store.get('users', req.params.id);
+
+  if (!parent || parent.role !== 'parent') {
+    throw notFound('Parent not found');
+  }
+
+  res.json(publicUser(parent));
+});
+
   app.post('/parents', ...staffMgr, async (req, res) => {
     const { username, password, name, phone } = req.body || {};
     if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
