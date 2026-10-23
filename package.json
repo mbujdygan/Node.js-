@@ -1,20 +1,19 @@
 {
   "name": "kindergarten-api",
   "version": "1.0.0",
-  "description": "REST API для управління приватним дитячим садком",
+  "description": "REST API для управління приватним дитячим садком (Node.js + Express + PostgreSQL)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "start:memory": "STORAGE=memory node src/server.js",
-    "test": "jest --coverage"
+    "test": "jest --runInBand --coverage"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "express": "^5.3.0",
-    "pg": "^8.13.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "jest": "^30.5.2",
@@ -24,8 +23,7 @@
     "testEnvironment": "node",
     "collectCoverageFrom": [
       "src/**/*.js",
-      "!src/server.js",
-      "!src/db.js"
+      "!src/server.js"
     ],
     "coverageThreshold": {
       "global": {
