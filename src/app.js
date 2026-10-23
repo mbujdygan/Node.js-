@@ -80,16 +80,6 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
-  app.get('/parents/:id', ...staffMgr, async (req, res) => {
-  const parent = await store.get('users', req.params.id);
-
-  if (!parent || parent.role !== 'parent') {
-    throw notFound('Parent not found');
-  }
-
-  res.json(publicUser(parent));
-});
-
   app.post('/parents', ...staffMgr, async (req, res) => {
     const { username, password, name, phone } = req.body || {};
     if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
@@ -103,6 +93,16 @@ function createApp(store) {
   app.get('/parents', ...staffMgr, async (req, res) => {
     res.json((await store.where('users', { role: 'parent' })).map(publicUser));
   });
+
+    app.get('/parents/:id', ...staffMgr, async (req, res) => {
+  const parent = await store.get('users', req.params.id);
+
+  if (!parent || parent.role !== 'parent') {
+    throw notFound('Parent not found');
+  }
+
+  res.json(publicUser(parent));
+});
 
   // ---------- staff (вихователі, помічники, викладачі) ----------
   app.post('/staff', ...staffAdmin, async (req, res) => {
