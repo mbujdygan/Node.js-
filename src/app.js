@@ -104,6 +104,46 @@ function createApp(store) {
   res.json(publicUser(parent));
 });
 
+  
+  app.patch('/parents/:id', ...staffMgr, async (req, res) => {
+    const parent = await store.get('users', req.params.id);
+
+    if (!parent || parent.role !== 'parent') {
+      throw notFound('Parent not found');
+    }
+
+    const { name, phone } = req.body || {};
+    const patch = {};
+
+    if (name !== undefined) {
+      if (!isStr(name)) {
+        throw bad('name must be a non-empty string');
+      }
+      patch.name = name;
+    }
+
+    if (phone !== undefined) {
+      if (phone !== null && !isStr(phone)) {
+        throw bad('phone must be a string or null');
+      }
+      patch.phone = phone;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      throw bad('No valid fields to update');
+    }
+
+    const updated = await store.update(
+      'users',
+      parent.id,
+      patch,
+      actor(req)
+    );
+
+    res.json(publicUser(updated));
+  });
+
+
   // ---------- staff (вихователі, помічники, викладачі) ----------
   app.post('/staff', ...staffAdmin, async (req, res) => {
     const { name, type, subjects, salary, username, password } = req.body || {};
