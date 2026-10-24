@@ -1,10 +1,11 @@
 'use strict';
 const express = require('express');
-const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./auth');
+const { hashPassword,verifyPassword,signToken,authenticate,requireRole} = require('./modules/auth/auth');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
-const { ageOf, calcBilling } = require('./billing');
-const { generateSchedule, viewSchedule, teacherView } = require('./schedule');
-const { calcProfit, optimize } = require('./finance');
+const { ageOf, calcBilling } = require('./modules/billing/billing');
+const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
+const { calcProfit, optimize } = require('./modules/finance/finance');
+const { createChildrenRouter } = require('./modules/children/children.routes');
 
 const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
@@ -14,6 +15,7 @@ const publicUser = ({ passwordHash, ...u }) => u;
 function createApp(store) {
   const app = express();
   app.use(express.json());
+  app.use('/children', createChildrenRouter(store));
   const s = () => store.settings;
   const actor = (req) => `${req.user.role}:${req.user.username}`;
   const staffAdmin = [authenticate, requireRole('admin')];
@@ -222,62 +224,6 @@ function createApp(store) {
   });
 
   // ---------- children ----------
-  app.post('/children', ...staffMgr, async (req, res) => {
-    const { name, birthDate, parentId, discountPercent = 0, paymentPlan = 'monthly' } = req.body || {};
-    if (!isStr(name)) throw bad('name is required');
-    if (!validDate(birthDate)) throw bad('birthDate must be a valid date (YYYY-MM-DD)');
-    const age = ageOf(birthDate);
-    if (age < s().minAge || age > s().maxAge) throw bad(`Child age must be between ${s().minAge} and ${s().maxAge}`);
-    const parent = await requireParent(parentId);
-    if (!PLANS.includes(paymentPlan)) throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
-    // фінансові параметри (пільги) може змінювати лише адмін
-    if (discountPercent !== 0 && req.user.role !== 'admin') throw forbidden('Only admin can set discounts');
-    validateDiscount(discountPercent);
-    const c = await store.insert('children', {
-      name, birthDate: birthDate.slice(0, 10), parentId: parent.id, groupId: null, discountPercent, paymentPlan,
-    }, actor(req));
-    res.status(201).json(withAge(c));
-  });
-
-  app.get('/children', authenticate, async (req, res) => {
-    const groups = new Map((await store.list('groups')).map((g) => [g.id, g]));
-    const children = await store.list('children');
-    res.json(children.filter((c) => canSeeChild(req, c, groups.get(c.groupId))).map(withAge));
-  });
-
-  app.get('/children/:id', authenticate, async (req, res) => res.json(withAge(await getChild(req))));
-
-  app.patch('/children/:id', ...staffMgr, async (req, res) => {
-    const c = await getChild(req);
-    const { name, birthDate, parentId, discountPercent, paymentPlan } = req.body || {};
-    const patch = {};
-    if (name !== undefined) { if (!isStr(name)) throw bad('name must be a string'); patch.name = name; }
-    if (birthDate !== undefined) {
-      if (!validDate(birthDate)) throw bad('invalid birthDate');
-      const age = ageOf(birthDate);
-      if (age < s().minAge || age > s().maxAge) throw bad('Child age is out of range');
-      if (c.groupId && age !== (await getGroup(c.groupId)).age) throw conflict('New age does not match the child group');
-      patch.birthDate = birthDate.slice(0, 10);
-    }
-    if (parentId !== undefined) patch.parentId = (await requireParent(parentId)).id;
-    if (discountPercent !== undefined || paymentPlan !== undefined) {
-      if (req.user.role !== 'admin') throw forbidden('Only admin can change financial parameters');
-      if (discountPercent !== undefined) { validateDiscount(discountPercent); patch.discountPercent = discountPercent; }
-      if (paymentPlan !== undefined) {
-        if (!PLANS.includes(paymentPlan)) throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
-        patch.paymentPlan = paymentPlan;
-      }
-    }
-    res.json(withAge(await store.update('children', c.id, patch, actor(req))));
-  });
-
-  app.delete('/children/:id', ...staffAdmin, async (req, res) => {
-    const c = await store.get('children', req.params.id);
-    if (!c) throw notFound('Child not found');
-    await store.remove('children', c.id, actor(req));
-    res.status(204).end();
-  });
-
   app.get('/children/:id/billing', authenticate, requireRole('admin', 'manager', 'parent'), async (req, res) => {
     const c = await getChild(req);
     const { months, plan, workDays } = req.query;
