@@ -1,5 +1,5 @@
 'use strict';
-const { calcBilling, ageOf, mealPricePerDay, round2 } = require('./billing');
+const { calcBilling, ageOf, mealPricePerDay, round2 } = require('../billing/billing');
 
 function childEconomics(child, s) {
   const b = calcBilling(child, s, { plan: child.paymentPlan || 'monthly', months: 1 });

@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { unauthorized, forbidden } = require('./errors');
+const { unauthorized, forbidden } = require('../../errors');
 
 const SECRET = () => process.env.JWT_SECRET || 'dev-secret-change-me';
 

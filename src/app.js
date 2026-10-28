@@ -2,11 +2,11 @@
 
 const express = require('express');
 const { validateLogin, validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
-const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./auth');
+const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
-const { ageOf, calcBilling } = require('./billing');
-const { generateSchedule, viewSchedule, teacherView } = require('./schedule');
-const { calcProfit, optimize } = require('./finance');
+const { ageOf, calcBilling } = require('./modules/billing/billing');
+const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
+const { calcProfit, optimize } = require('./modules/finance/finance');
 
 const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
