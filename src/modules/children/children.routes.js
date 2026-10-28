@@ -2,23 +2,29 @@
 
 const express = require('express');
 const { authenticate, requireRole } = require('../auth/auth');
-const childrenController = require('./children.controller');
+const { createChildrenController } = require('./children.controller');
+const { createChildrenService } = require('./children.service');
 
 function createChildrenRouter(store) {
   const router = express.Router();
+  const childrenService = createChildrenService(store);
+  const controller = createChildrenController(childrenService);
 
   const staffMgr = [authenticate, requireRole('admin', 'manager')];
-  const staffAdmin = [authenticate, requireRole('admin')];
 
-  router.post('/', ...staffMgr, childrenController.createChild(store));
-  router.get('/', authenticate, childrenController.getChildren(store));
-  router.get('/:id', authenticate, childrenController.getChild(store));
-  router.patch('/:id', authenticate, childrenController.updateChild(store));
-  router.delete('/:id', ...staffMgr, childrenController.deleteChild(store));
+  router.post('/', ...staffMgr, controller.create);
+  router.get('/', authenticate, controller.list);
+  router.get('/:id', authenticate, controller.getById);
+  router.patch('/:id', authenticate, controller.update);
+  router.delete('/:id', ...staffMgr, controller.remove);
 
-  // Ендпоінти для billing та schedule
-  router.get('/:id/billing', authenticate, requireRole('admin', 'manager', 'parent'), childrenController.getBilling(store));
-  router.get('/:id/schedule', authenticate, childrenController.getSchedule(store));
+  router.get(
+    '/:id/billing',
+    authenticate,
+    requireRole('admin', 'manager', 'parent'),
+    controller.getBilling,
+  );
+  router.get('/:id/schedule', authenticate, controller.getSchedule);
 
   return router;
 }
