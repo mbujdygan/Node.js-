@@ -26,19 +26,15 @@ function createChildrenService(store) {
 
   const getGroup = async (id) => {
     const group = await store.get('groups', id);
-
     if (!group) throw notFound('Group not found');
-
     return group;
   };
 
   const requireParent = async (parentId) => {
     const parent = await store.get('users', parentId);
-
     if (!parent || parent.role !== 'parent') {
       throw bad('parentId must reference an existing parent');
     }
-
     return parent;
   };
 
@@ -57,7 +53,6 @@ function createChildrenService(store) {
 
   const getById = async (req, id) => {
     const child = await store.get('children', id);
-
     if (!child) throw notFound('Child not found');
 
     const group = child.groupId
@@ -111,8 +106,9 @@ function createChildrenService(store) {
       throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
     }
 
-    if (discountPercent !== 0 && req.user.role !== 'admin') {
-      throw forbidden('Only admin can set discounts');
+    if (req.user.role === 'manager') {
+      if (discountPercent !== 0) throw forbidden('Managers cannot grant discounts');
+      if (paymentPlan !== 'monthly') throw forbidden('Managers cannot change payment plan');
     }
 
     validateDiscount(discountPercent);
@@ -171,8 +167,8 @@ function createChildrenService(store) {
     }
 
     if (discountPercent !== undefined || paymentPlan !== undefined) {
-      if (req.user.role !== 'admin') {
-        throw forbidden('Only admin can change financial parameters');
+      if (req.user.role === 'manager') {
+        throw forbidden('Managers cannot change financial parameters');
       }
 
       if (discountPercent !== undefined) {
@@ -184,7 +180,6 @@ function createChildrenService(store) {
         if (!PLANS.includes(paymentPlan)) {
           throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
         }
-
         patch.paymentPlan = paymentPlan;
       }
     }
@@ -195,10 +190,10 @@ function createChildrenService(store) {
   };
 
   const remove = async (req, id) => {
-    const child = await getById(req, id);
     if (req.user.role === 'manager') {
       throw forbidden('Managers cannot delete children');
     }
+    const child = await getById(req, id);
     await store.remove('children', child.id, actor(req));
   };
 
