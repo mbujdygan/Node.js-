@@ -166,7 +166,7 @@ describe('groups', () => {
 });
 
 describe('children & доступ', () => {
-  test('валідація створення', async () => {
+  test('валідація створення та покриття нових методів', async () => {
     const a = ctx.admin;
     const base = { name: 'N', birthDate: yearsAgo(3), parentId: ids.parent };
     expect((await call('post', '/children', a, { ...base, name: '' })).status).toBe(400);
@@ -180,6 +180,11 @@ describe('children & доступ', () => {
     const ok = await call('post', '/children', a, { ...base, discountPercent: 30, paymentPlan: 'yearly' });
     expect(ok.status).toBe(201);
     expect(ok.body.age).toBe(3);
+
+    // Додаткове покриття edge cases для модуля children:
+    expect((await call('get', '/children/99999', a)).status).toBe(404);
+    expect((await call('patch', '/children/99999', a, { name: 'Test' })).status).toBe(404);
+    expect((await call('delete', '/children/99999', a)).status).toBe(404);
   });
   test('менеджер реєструє дітей, але не ставить пільги', async () => {
     await call('post', '/managers', ctx.admin, { username: 'm', password: 'p', name: 'M' });
@@ -294,8 +299,6 @@ describe('schedule endpoints', () => {
 
 describe('finance', () => {
   test('profit: по групі та загалом', async () => {
-    // 2 дитини, 3 роки: (13500 + 8800) + (15000 + 8800) = 46100
-    // прямі: 2*40000 = 80000; спільні: 5 предметників * 40000 + 80000 = 280000
     const r = await call('get', '/profit', ctx.admin);
     expect(r.body.groups[0]).toMatchObject({ children: 2, revenue: 46100, directCosts: 80000 });
     expect(r.body.total.sharedCosts).toBe(280000);
