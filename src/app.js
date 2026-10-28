@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
-const { validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
+const { validateLogin, validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
@@ -50,7 +50,7 @@ function createApp(store) {
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  app.post('/auth/login', async (req, res) => {
+  app.post('/auth/login', validateLogin, async (req, res) => {
     const { username, password } = req.body || {};
     const user = await store.one('users', { username });
     if (!user || !verifyPassword(password, user.passwordHash)) throw unauthorized('Invalid credentials');
