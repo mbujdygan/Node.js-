@@ -63,7 +63,7 @@ function createChildrenService(store) {
       throw forbidden('Not your child');
     }
 
-    return child;
+    return withAge(child);
   };
 
   const list = async (req) => {
@@ -130,7 +130,12 @@ function createChildrenService(store) {
   };
 
   const update = async (req, id) => {
-    const child = await getById(req, id);
+    const child = await store.get('children', id);
+    if (!child) throw notFound('Child not found');
+
+    const group = child.groupId ? await store.get('groups', child.groupId) : null;
+    if (!canSeeChild(req, child, group)) throw forbidden('Not your child');
+
     const {
       name,
       birthDate,
@@ -193,12 +198,19 @@ function createChildrenService(store) {
     if (req.user.role === 'manager') {
       throw forbidden('Managers cannot delete children');
     }
-    const child = await getById(req, id);
+    const child = await store.get('children', id);
+    if (!child) throw notFound('Child not found');
+
     await store.remove('children', child.id, actor(req));
   };
 
   const getBilling = async (req, id) => {
-    const child = await getById(req, id);
+    const child = await store.get('children', id);
+    if (!child) throw notFound('Child not found');
+
+    const group = child.groupId ? await store.get('groups', child.groupId) : null;
+    if (!canSeeChild(req, child, group)) throw forbidden('Not your child');
+
     const { months, plan, workDays } = req.query || {};
 
     if (plan !== undefined && !PLANS.includes(plan)) {
@@ -217,7 +229,12 @@ function createChildrenService(store) {
   };
 
   const getSchedule = async (req, id) => {
-    const child = await getById(req, id);
+    const child = await store.get('children', id);
+    if (!child) throw notFound('Child not found');
+
+    const group = child.groupId ? await store.get('groups', child.groupId) : null;
+    if (!canSeeChild(req, child, group)) throw forbidden('Not your child');
+
     return viewSchedule(
       await store.getSchedule(),
       child.groupId ? [child.groupId] : [],
