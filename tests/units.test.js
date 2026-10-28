@@ -1,5 +1,5 @@
 'use strict';
-const { ageOf, mealPricePerDay, calcBilling } = require('../src/billing');
+const { ageOf, mealPricePerDay, calcBilling } = require('../src/modules/billing/billing');
 const { DEFAULT_SETTINGS } = require('../src/config');
 const { spread, lessonSlotIndexes, emptyDay, generateSchedule, viewSchedule, teacherView } = require('../src/schedule');
 const { hashPassword, verifyPassword } = require('../src/auth');

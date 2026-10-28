@@ -1,7 +1,7 @@
 'use strict';
 const request = require('supertest');
 const { createPool, migrate } = require('../src/db');
-const { Store } = require('../src/store');
+const { Store } = require('../src/modules/store/store');
 const { createApp, seedAdmin } = require('../src/app');
 
 const TEST_URL = process.env.TEST_DATABASE_URL
