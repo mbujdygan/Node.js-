@@ -1,6 +1,8 @@
 'use strict';
+
 const express = require('express');
-const { hashPassword,verifyPassword,signToken,authenticate,requireRole} = require('./modules/auth/auth');
+const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
+const { validateLogin, validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
@@ -21,7 +23,6 @@ function createApp(store) {
   const staffAdmin = [authenticate, requireRole('admin')];
   const staffMgr = [authenticate, requireRole('admin', 'manager')];
 
-  // ---------- helpers ----------
   const canSeeChild = (req, child, group) => {
     const { role, id, staffId } = req.user;
     if (role === 'admin' || role === 'manager') return true;
@@ -46,25 +47,12 @@ function createApp(store) {
     if (st.type !== type) throw bad(`${label} must be staff of type "${type}"`);
     return st;
   };
-  const validateDiscount = (d) => {
-    if (!s().allowedDiscounts.includes(d)) {
-      throw bad(`discountPercent must be one of ${s().allowedDiscounts.join(', ')}`);
-    }
-  };
-  const validDate = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}/.test(v) && !Number.isNaN(Date.parse(v));
-  const withAge = (c) => ({ ...c, age: ageOf(c.birthDate) });
-  const requireParent = async (parentId) => {
-    const p = await store.get('users', parentId);
-    if (!p || p.role !== 'parent') throw bad('parentId must reference an existing parent');
-    return p;
-  };
 
-  // ---------- auth ----------
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  app.post('/auth/login', async (req, res) => {
-    const { username, password } = req.body || {};
-    const user = isStr(username) && isStr(password) && await store.one('users', { username });
+  app.post('/auth/login', validateLogin, async (req, res) => {
+    const { username, password } = req.body;
+    const user = await store.one('users', { username });
     if (!user || !verifyPassword(password, user.passwordHash)) throw unauthorized('Invalid credentials');
     res.json({ token: signToken(user), user: publicUser(user) });
   });
@@ -73,18 +61,15 @@ function createApp(store) {
     res.json(publicUser(await store.get('users', req.user.id)));
   });
 
-  // ---------- users: managers & parents ----------
-  app.post('/managers', ...staffAdmin, async (req, res) => {
-    const { username, password, name } = req.body || {};
-    if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
+  app.post('/managers', ...staffAdmin, validateManager, async (req, res) => {
+    const { username, password, name } = req.body;
     if (await store.one('users', { username })) throw conflict('Username already exists');
     const u = await store.insert('users', { username, name, role: 'manager', passwordHash: hashPassword(password) }, actor(req));
     res.status(201).json(publicUser(u));
   });
-
-  app.post('/parents', ...staffMgr, async (req, res) => {
-    const { username, password, name, phone } = req.body || {};
-    if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
+  
+  app.post('/parents', ...staffMgr, validateParent, async (req, res) => {
+    const { username, password, name, phone } = req.body;
     if (await store.one('users', { username })) throw conflict('Username already exists');
     const u = await store.insert('users', {
       username, name, phone: phone || null, role: 'parent', passwordHash: hashPassword(password),
@@ -96,21 +81,16 @@ function createApp(store) {
     res.json((await store.where('users', { role: 'parent' })).map(publicUser));
   });
 
-  // ---------- staff (вихователі, помічники, викладачі) ----------
-  app.post('/staff', ...staffAdmin, async (req, res) => {
-    const { name, type, subjects, salary, username, password } = req.body || {};
-    if (!isStr(name)) throw bad('name is required');
-    if (!STAFF_TYPES.includes(type)) throw bad(`type must be one of ${STAFF_TYPES.join(', ')}`);
+  app.post('/staff', ...staffAdmin, validateStaff, async (req, res) => {
+    const { name, type, subjects, salary, username, password } = req.body;
     if (salary !== undefined && !(Number(salary) >= 0)) throw bad('salary must be a non-negative number');
     let subs = [];
     if (type === 'subject') {
-      if (!Array.isArray(subjects) || !subjects.length
-        || !subjects.every((x) => s().subjects.includes(x))) {
+      if (!Array.isArray(subjects) || !subjects.length || !subjects.every((x) => s().subjects.includes(x))) {
         throw bad(`subjects must be a non-empty subset of ${s().subjects.join(', ')}`);
       }
       subs = subjects;
     }
-    if ((username || password) && !(isStr(username) && isStr(password))) throw bad('username and password must be set together');
     if (username && await store.one('users', { username })) throw conflict('Username already exists');
     const st = await store.insert('staff', { name, type, subjects: subs, salary: salary === undefined ? undefined : Number(salary) }, actor(req));
     if (username) {
@@ -154,7 +134,6 @@ function createApp(store) {
     res.json(teacherView(await store.getSchedule(), st.id));
   });
 
-  // ---------- groups ----------
   app.post('/groups', ...staffAdmin, async (req, res) => {
     const { name, age, educatorId, assistantId } = req.body || {};
     if (!isStr(name)) throw bad('name is required');
@@ -223,7 +202,6 @@ function createApp(store) {
     res.json(await store.update('children', child.id, { groupId: null }, actor(req)));
   });
 
-  // ---------- children ----------
   app.get('/children/:id/billing', authenticate, requireRole('admin', 'manager', 'parent'), async (req, res) => {
     const c = await getChild(req);
     const { months, plan, workDays } = req.query;
@@ -240,7 +218,6 @@ function createApp(store) {
     res.json(viewSchedule(await store.getSchedule(), c.groupId ? [c.groupId] : []));
   });
 
-  // ---------- schedule ----------
   app.post('/schedule/generate', ...staffMgr, async (req, res) => {
     const groups = await store.list('groups');
     if (!groups.length) throw conflict('No groups to schedule');
@@ -261,7 +238,6 @@ function createApp(store) {
     return res.json(viewSchedule(schedule, ids));
   });
 
-  // ---------- finance ----------
   app.get('/profit', ...staffAdmin, async (req, res) => res.json(await calcProfit(store)));
 
   app.get('/profit/groups/:id', ...staffAdmin, async (req, res) => {
@@ -271,7 +247,6 @@ function createApp(store) {
 
   app.get('/optimization', ...staffAdmin, async (req, res) => res.json(await optimize(store)));
 
-  // ---------- settings & history ----------
   app.get('/settings', ...staffMgr, (req, res) => res.json(s()));
 
   app.patch('/settings', ...staffAdmin, async (req, res) => {
@@ -298,15 +273,13 @@ function createApp(store) {
     res.json(await store.getHistory({ collection, id }));
   });
 
-  // ---------- errors ----------
   app.use((req, res, next) => next(notFound('Route not found')));
-  // eslint-disable-next-line no-unused-vars
+
   app.use((err, req, res, next) => {
     if (err instanceof HttpError) {
       return res.status(err.status).json({ error: err.message, details: err.details });
     }
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
-    // помилки PostgreSQL
     if (err.code === '23505') return res.status(409).json({ error: 'Record already exists' });
     if (err.code === '23503') return res.status(409).json({ error: 'Related record conflict' });
     if (err.code === '23514' || err.code === '22P02' || err.code === '22003') {
@@ -319,12 +292,13 @@ function createApp(store) {
 }
 
 async function seedAdmin(store) {
-  if (!(await store.one('users', { role: 'admin' }))) {
+  const admin = await store.one('users', { username: 'admin' });
+  if (!admin) {
     await store.insert('users', {
-      username: process.env.ADMIN_USER || 'admin',
-      name: 'Administrator',
+      username: 'admin',
+      name: 'System Administrator',
       role: 'admin',
-      passwordHash: hashPassword(process.env.ADMIN_PASSWORD || 'admin123'),
+      passwordHash: hashPassword('admin123'),
     }, 'system');
   }
 }
