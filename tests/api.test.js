@@ -20,8 +20,8 @@ describe('auth', () => {
     expect(ok.body.user.passwordHash).toBeUndefined();
     expect((await request(ctx.app).post('/auth/login').send({ username: 'admin', password: 'x' })).status).toBe(401);
     expect((await request(ctx.app).post('/auth/login').send({ username: 'ghost', password: 'x' })).status).toBe(401);
-    expect((await request(ctx.app).post('/auth/login').send({})).status).toBe(401);
-    expect((await request(ctx.app).post('/auth/login')).status).toBe(401);
+    expect((await request(ctx.app).post('/auth/login').send({})).status).toBe(400);
+    expect((await request(ctx.app).post('/auth/login')).status).toBe(400);
   });
   test('токен обов\'язковий і валідний', async () => {
     expect((await call('get', '/children')).status).toBe(401);
