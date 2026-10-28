@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
-const { validateLogin, validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
+const { validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
@@ -17,41 +17,12 @@ const publicUser = ({ passwordHash, ...u }) => u;
 function createApp(store) {
   const app = express();
   app.use(express.json());
-  app.use('/children', createChildrenRouter(store));
-  const s = () => store.settings;
-  const actor = (req) => `${req.user.role}:${req.user.username}`;
-  const staffAdmin = [authenticate, requireRole('admin')];
-  const staffMgr = [authenticate, requireRole('admin', 'manager')];
-
-  const canSeeChild = (req, child, group) => {
-    const { role, id, staffId } = req.user;
-    if (role === 'admin' || role === 'manager') return true;
-    if (role === 'parent') return child.parentId === id;
-    return Boolean(group && (group.educatorId === staffId || group.assistantId === staffId));
-  };
-  const getChild = async (req) => {
-    const child = await store.get('children', req.params.id);
-    if (!child) throw notFound('Child not found');
-    const group = child.groupId ? await store.get('groups', child.groupId) : null;
-    if (!canSeeChild(req, child, group)) throw forbidden('Not your child');
-    return child;
-  };
-  const getGroup = async (id) => {
-    const g = await store.get('groups', id);
-    if (!g) throw notFound('Group not found');
-    return g;
-  };
-  const staffOfType = async (id, type, label) => {
-    const st = await store.get('staff', id);
-    if (!st) throw notFound(`${label} not found`);
-    if (st.type !== type) throw bad(`${label} must be staff of type "${type}"`);
-    return st;
-  };
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  app.post('/auth/login', validateLogin, async (req, res) => {
+  app.post('/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
+    if (!username || !password) throw bad('username and password are required');
     const user = await store.one('users', { username });
     if (!user || !verifyPassword(password, user.passwordHash)) throw unauthorized('Invalid credentials');
     res.json({ token: signToken(user), user: publicUser(user) });
@@ -60,6 +31,27 @@ function createApp(store) {
   app.get('/auth/me', authenticate, async (req, res) => {
     res.json(publicUser(await store.get('users', req.user.id)));
   });
+
+  // Підключаємо новий модуль /children
+  app.use('/children', createChildrenRouter(store));
+
+  const s = () => store.settings;
+  const actor = (req) => `${req.user.role}:${req.user.username}`;
+  const staffAdmin = [authenticate, requireRole('admin')];
+  const staffMgr = [authenticate, requireRole('admin', 'manager')];
+
+  const getGroup = async (id) => {
+    const g = await store.get('groups', id);
+    if (!g) throw notFound('Group not found');
+    return g;
+  };
+
+  const staffOfType = async (id, type, label) => {
+    const st = await store.get('staff', id);
+    if (!st) throw notFound(`${label} not found`);
+    if (st.type !== type) throw bad(`${label} must be staff of type "${type}"`);
+    return st;
+  };
 
   app.post('/managers', ...staffAdmin, validateManager, async (req, res) => {
     const { username, password, name } = req.body;
@@ -78,7 +70,8 @@ function createApp(store) {
   });
 
   app.get('/parents', ...staffMgr, async (req, res) => {
-    res.json((await store.where('users', { role: 'parent' })).map(publicUser));
+    const parents = await store.where('users', { role: 'parent' });
+    res.json((parents || []).map(publicUser));
   });
 
   app.post('/staff', ...staffAdmin, validateStaff, async (req, res) => {
@@ -152,9 +145,9 @@ function createApp(store) {
     if (req.user.role === 'teacher') {
       groups = groups.filter((g) => g.educatorId === req.user.staffId || g.assistantId === req.user.staffId);
     }
-    const children = await store.list('children');
+    const children = (await store.list('children')) || [];
     res.json(groups.map((g) => ({
-      ...g, childrenCount: children.filter((c) => c.groupId === g.id).length,
+      ...g, childrenCount: children.filter((c) => c && c.groupId === g.id).length,
     })));
   });
 
@@ -200,22 +193,6 @@ function createApp(store) {
     const child = await store.get('children', req.params.childId);
     if (!child || child.groupId !== g.id) throw notFound('Child is not in this group');
     res.json(await store.update('children', child.id, { groupId: null }, actor(req)));
-  });
-
-  app.get('/children/:id/billing', authenticate, requireRole('admin', 'manager', 'parent'), async (req, res) => {
-    const c = await getChild(req);
-    const { months, plan, workDays } = req.query;
-    if (plan !== undefined && !PLANS.includes(plan)) throw bad(`plan must be one of ${PLANS.join(', ')}`);
-    const m = months === undefined ? undefined : Number(months);
-    if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= 12)) throw bad('months must be an integer 1..12');
-    const w = workDays === undefined ? undefined : Number(workDays);
-    if (w !== undefined && !(Number.isInteger(w) && w >= 1 && w <= 31)) throw bad('workDays must be an integer 1..31');
-    res.json(calcBilling(c, s(), { months: m, plan, workDays: w }));
-  });
-
-  app.get('/children/:id/schedule', authenticate, async (req, res) => {
-    const c = await getChild(req);
-    res.json(viewSchedule(await store.getSchedule(), c.groupId ? [c.groupId] : []));
   });
 
   app.post('/schedule/generate', ...staffMgr, async (req, res) => {
