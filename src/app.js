@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
-const { validateLogin, validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
+const { validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
@@ -50,8 +50,8 @@ function createApp(store) {
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  app.post('/auth/login', validateLogin, async (req, res) => {
-    const { username, password } = req.body;
+  app.post('/auth/login', async (req, res) => {
+    const { username, password } = req.body || {};
     const user = await store.one('users', { username });
     if (!user || !verifyPassword(password, user.passwordHash)) throw unauthorized('Invalid credentials');
     res.json({ token: signToken(user), user: publicUser(user) });
@@ -67,7 +67,7 @@ function createApp(store) {
     const u = await store.insert('users', { username, name, role: 'manager', passwordHash: hashPassword(password) }, actor(req));
     res.status(201).json(publicUser(u));
   });
-  
+
   app.post('/parents', ...staffMgr, validateParent, async (req, res) => {
     const { username, password, name, phone } = req.body;
     if (await store.one('users', { username })) throw conflict('Username already exists');
