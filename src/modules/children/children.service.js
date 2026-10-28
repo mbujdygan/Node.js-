@@ -1,6 +1,7 @@
 'use strict';
 
-const { ageOf } = require('../billing/billing');
+const { ageOf, calcBilling } = require('../billing/billing');
+const { viewSchedule } = require('../schedule/schedule');
 const { bad, notFound, forbidden, conflict } = require('../../errors');
 const { isStr, validDate } = require('./children.validation');
 
@@ -194,11 +195,38 @@ function createChildrenService(store) {
   };
 
   const remove = async (req, id) => {
-    const child = await store.get('children', id);
-
-    if (!child) throw notFound('Child not found');
-
+    const child = await getById(req, id);
+    if (req.user.role === 'manager') {
+      throw forbidden('Managers cannot delete children');
+    }
     await store.remove('children', child.id, actor(req));
+  };
+
+  const getBilling = async (req, id) => {
+    const child = await getById(req, id);
+    const { months, plan, workDays } = req.query || {};
+
+    if (plan !== undefined && !PLANS.includes(plan)) {
+      throw bad(`plan must be one of ${PLANS.join(', ')}`);
+    }
+    const m = months === undefined ? undefined : Number(months);
+    if (m !== undefined && (!Number.isInteger(m) || m < 1 || m > 12)) {
+      throw bad('months must be an integer 1..12');
+    }
+    const w = workDays === undefined ? undefined : Number(workDays);
+    if (w !== undefined && (!Number.isInteger(w) || w < 1 || w > 31)) {
+      throw bad('workDays must be an integer 1..31');
+    }
+
+    return calcBilling(child, s(), { months: m, plan, workDays: w });
+  };
+
+  const getSchedule = async (req, id) => {
+    const child = await getById(req, id);
+    return viewSchedule(
+      await store.getSchedule(),
+      child.groupId ? [child.groupId] : [],
+    );
   };
 
   return {
@@ -207,6 +235,8 @@ function createChildrenService(store) {
     create,
     update,
     remove,
+    getBilling,
+    getSchedule,
   };
 }
 
