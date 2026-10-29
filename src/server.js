@@ -1,6 +1,6 @@
 'use strict';
 const { createPool, migrate } = require('./db');
-const { Store } = require('./store');
+const { Store } = require('./modules/store/store');
 const { createApp, seedAdmin } = require('./app');
 
 async function main() {
