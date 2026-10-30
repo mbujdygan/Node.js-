@@ -1,5 +1,4 @@
 'use strict';
-
 const express = require('express');
 const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
 const { validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
@@ -9,7 +8,6 @@ const { generateSchedule, viewSchedule, teacherView } = require('./modules/sched
 const { calcProfit, optimize } = require('./modules/finance/finance');
 const { createChildrenRouter } = require('./modules/children/children.routes');
 
-const STAFF_TYPES = ['educator', 'assistant', 'subject'];
 const PLANS = ['monthly', 'yearly'];
 const isStr = (v) => typeof v === 'string' && v.trim().length > 0;
 const publicUser = ({ passwordHash, ...u }) => u;
@@ -76,10 +74,10 @@ function createApp(store) {
 
   app.post('/staff', ...staffAdmin, validateStaff, async (req, res) => {
     const { name, type, subjects, salary, username, password } = req.body;
-    if (salary !== undefined && !(Number(salary) >= 0)) throw bad('salary must be a non-negative number');
     let subs = [];
     if (type === 'subject') {
-      if (!Array.isArray(subjects) || !subjects.length || !subjects.every((x) => s().subjects.includes(x))) {
+      if (!Array.isArray(subjects) || !subjects.length
+        || !subjects.every((x) => s().subjects.includes(x))) {
         throw bad(`subjects must be a non-empty subset of ${s().subjects.join(', ')}`);
       }
       subs = subjects;
@@ -269,13 +267,12 @@ function createApp(store) {
 }
 
 async function seedAdmin(store) {
-  const admin = await store.one('users', { username: 'admin' });
-  if (!admin) {
+  if (!(await store.one('users', { role: 'admin' }))) {
     await store.insert('users', {
-      username: 'admin',
-      name: 'System Administrator',
+      username: process.env.ADMIN_USER || 'admin',
+      name: 'Administrator',
       role: 'admin',
-      passwordHash: hashPassword('admin123'),
+      passwordHash: hashPassword(process.env.ADMIN_PASSWORD || 'admin123'),
     }, 'system');
   }
 }

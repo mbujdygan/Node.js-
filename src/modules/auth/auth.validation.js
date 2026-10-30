@@ -1,22 +1,30 @@
 'use strict';
 
 const Joi = require('joi');
-const { bad } = require('../../errors');
+const { bad, unauthorized } = require('../../errors');
 
-// Схема для /auth/login
+// Непорожній рядок (пробіли по краях обрізаються, рядок з самих пробілів - помилка)
+const text = () => Joi.string().trim().required();
+// Пароль не обрізаємо, але рядок з самих пробілів недопустимий
+const secret = () => Joi.string().regex(/\S/).required();
+
+// POST /auth/login
 const loginSchema = Joi.object({
   username: Joi.string().required(),
   password: Joi.string().required(),
 });
 
-// Схема для /managers
+// POST /managers
 const managerSchema = Joi.object({
   username: Joi.string().required(),
   password: Joi.string().required(),
   name: Joi.string().required(),
+  username: text(),
+  password: secret(),
+  name: text(),
 });
 
-// Схема для /parents
+// POST /parents
 const parentSchema = Joi.object({
   username: Joi.string().required(),
   password: Joi.string().required(),
@@ -24,9 +32,9 @@ const parentSchema = Joi.object({
   phone: Joi.string().allow(null, '').optional(),
 });
 
-// Схема для /staff
+// POST /staff
 const staffSchema = Joi.object({
-  name: Joi.string().required(),
+  name: text(),
   type: Joi.string().valid('educator', 'assistant', 'subject').required(),
   salary: Joi.number().min(0).optional(),
   subjects: Joi.array().items(Joi.string()).optional(),
@@ -48,7 +56,8 @@ const validateBody = (schema) => (req, res, next) => {
 };
 
 module.exports = {
-  validateLogin: validateBody(loginSchema),
+  
+  validateLogin: validateBody(loginSchema, () => unauthorized('Invalid credentials')),
   validateManager: validateBody(managerSchema),
   validateParent: validateBody(parentSchema),
   validateStaff: validateBody(staffSchema),
