@@ -6,6 +6,7 @@ const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require(
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
 const { calcProfit, optimize } = require('./modules/finance/finance');
+const { createParentsRouter } = require('./modules/parents/parents.routes');
 const { createChildrenRouter } = require('./modules/children/children.routes');
 
 const PLANS = ['monthly', 'yearly'];
@@ -58,19 +59,8 @@ function createApp(store) {
     res.status(201).json(publicUser(u));
   });
 
-  app.post('/parents', ...staffMgr, validateParent, async (req, res) => {
-    const { username, password, name, phone } = req.body;
-    if (await store.one('users', { username })) throw conflict('Username already exists');
-    const u = await store.insert('users', {
-      username, name, phone: phone || null, role: 'parent', passwordHash: hashPassword(password),
-    }, actor(req));
-    res.status(201).json(publicUser(u));
-  });
-
-  app.get('/parents', ...staffMgr, async (req, res) => {
-    const parents = await store.where('users', { role: 'parent' });
-    res.json((parents || []).map(publicUser));
-  });
+   // ---------- parents ----------
+  app.use('/parents', createParentsRouter(store));
 
   app.post('/staff', ...staffAdmin, validateStaff, async (req, res) => {
     const { name, type, subjects, salary, username, password } = req.body;
