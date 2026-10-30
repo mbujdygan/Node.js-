@@ -1,4 +1,3 @@
-
 name: Node.js Tests
 
 on:
@@ -19,13 +18,10 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d kindergarten_test"
-          --health-interval 10s
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
-
-    env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/kindergarten_test
+          --health-retries 10
 
     steps:
       - name: Checkout repository
@@ -34,9 +30,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm install
 
-      - run: npm test
+      - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/kindergarten_test
+        run: npm test
