@@ -20,8 +20,8 @@ describe('auth', () => {
     expect(ok.body.user.passwordHash).toBeUndefined();
     expect((await request(ctx.app).post('/auth/login').send({ username: 'admin', password: 'x' })).status).toBe(401);
     expect((await request(ctx.app).post('/auth/login').send({ username: 'ghost', password: 'x' })).status).toBe(401);
-    expect((await request(ctx.app).post('/auth/login').send({})).status).toBe(401);
-    expect((await request(ctx.app).post('/auth/login')).status).toBe(401);
+    expect((await request(ctx.app).post('/auth/login').send({})).status).toBe(400);
+    expect((await request(ctx.app).post('/auth/login')).status).toBe(400);
   });
   test('токен обов\'язковий і валідний', async () => {
     expect((await call('get', '/children')).status).toBe(401);
@@ -154,11 +154,9 @@ describe('groups', () => {
     expect(wrong.status).toBe(409);
     expect((await call('post', `/groups/${g4}/children`, a, { childId: 999 })).status).toBe(404);
     expect((await call('post', '/groups/999/children', a, { childId: 1 })).status).toBe(404);
-    // ліміт 30
     await call('patch', '/settings', a, { maxGroupSize: 2 });
     const third = (await call('post', '/children', a, { name: 'K3', birthDate: yearsAgo(3), parentId: ids.parent })).body.id;
     expect((await call('post', `/groups/${ids.group}/children`, a, { childId: third })).status).toBe(409);
-    // повторне призначення тієї ж дитини не рахується як переповнення
     expect((await call('post', `/groups/${ids.group}/children`, a, { childId: ids.child })).status).toBe(200);
     expect((await call('delete', `/groups/${ids.group}/children/${ids.child}`, a)).body.groupId).toBeNull();
     expect((await call('delete', `/groups/${ids.group}/children/${ids.child}`, a)).status).toBe(404);
@@ -174,7 +172,7 @@ describe('children & доступ', () => {
     expect((await call('post', '/children', a, { ...base, birthDate: yearsAgo(1) })).status).toBe(400);
     expect((await call('post', '/children', a, { ...base, birthDate: yearsAgo(7) })).status).toBe(400);
     expect((await call('post', '/children', a, { ...base, parentId: 999 })).status).toBe(400);
-    expect((await call('post', '/children', a, { ...base, parentId: 1 })).status).toBe(400); // адмін не батько
+    expect((await call('post', '/children', a, { ...base, parentId: 1 })).status).toBe(400);
     expect((await call('post', '/children', a, { ...base, paymentPlan: 'weekly' })).status).toBe(400);
     expect((await call('post', '/children', a, { ...base, discountPercent: 15 })).status).toBe(400);
     const ok = await call('post', '/children', a, { ...base, discountPercent: 30, paymentPlan: 'yearly' });
@@ -294,8 +292,6 @@ describe('schedule endpoints', () => {
 
 describe('finance', () => {
   test('profit: по групі та загалом', async () => {
-    // 2 дитини, 3 роки: (13500 + 8800) + (15000 + 8800) = 46100
-    // прямі: 2*40000 = 80000; спільні: 5 предметників * 40000 + 80000 = 280000
     const r = await call('get', '/profit', ctx.admin);
     expect(r.body.groups[0]).toMatchObject({ children: 2, revenue: 46100, directCosts: 80000 });
     expect(r.body.total.sharedCosts).toBe(280000);

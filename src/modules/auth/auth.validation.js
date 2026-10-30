@@ -10,12 +10,15 @@ const secret = () => Joi.string().regex(/\S/).required();
 
 // POST /auth/login
 const loginSchema = Joi.object({
-  username: text(),
-  password: secret(),
+  username: Joi.string().required(),
+  password: Joi.string().required(),
 });
 
 // POST /managers
 const managerSchema = Joi.object({
+  username: Joi.string().required(),
+  password: Joi.string().required(),
+  name: Joi.string().required(),
   username: text(),
   password: secret(),
   name: text(),
@@ -23,9 +26,9 @@ const managerSchema = Joi.object({
 
 // POST /parents
 const parentSchema = Joi.object({
-  username: text(),
-  password: secret(),
-  name: text(),
+  username: Joi.string().required(),
+  password: Joi.string().required(),
+  name: Joi.string().required(),
   phone: Joi.string().allow(null, '').optional(),
 });
 
@@ -35,16 +38,21 @@ const staffSchema = Joi.object({
   type: Joi.string().valid('educator', 'assistant', 'subject').required(),
   salary: Joi.number().min(0).optional(),
   subjects: Joi.array().items(Joi.string()).optional(),
-  username: Joi.string().trim().optional(),
-  password: Joi.string().regex(/\S/).optional(),
-}).and('username', 'password'); // логін і пароль - тільки разом
+  username: Joi.string().optional(),
+  password: Joi.string().optional(),
+}).with('username', 'password').with('password', 'username');
 
-// Універсальний middleware. makeError визначає HTTP-статус помилки валідації.
-const validateBody = (schema, makeError = bad) => (req, res, next) => {
+// Універсальний middleware для обробки помилок Joi
+const validateBody = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.body || {}, { abortEarly: false, allowUnknown: true });
-  if (error) return next(makeError(error.details.map((d) => d.message).join(', ')));
+
+  if (error) {
+    const msg = error.details.map((d) => d.message).join(', ');
+    throw bad(msg);
+  }
+
   req.body = value;
-  return next();
+  next();
 };
 
 module.exports = {
