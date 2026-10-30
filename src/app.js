@@ -1,12 +1,14 @@
 'use strict';
 const express = require('express');
 const { hashPassword, verifyPassword, signToken, authenticate, requireRole } = require('./modules/auth/auth');
+const { validateManager, validateParent, validateStaff } = require('./modules/auth/auth.validation');
 const { HttpError, bad, notFound, forbidden, unauthorized, conflict } = require('./errors');
 const { ageOf, calcBilling } = require('./modules/billing/billing');
 const { generateSchedule, viewSchedule, teacherView } = require('./modules/schedule/schedule');
 const { calcProfit, optimize } = require('./modules/finance/finance');
 const { createParentsRouter } = require('./modules/parents/parents.routes');
 const { createStaffRouter } = require('./modules/staff/staff.routes');
+const { createChildrenRouter } = require('./modules/children/children.routes');
 
 const PLANS = ['monthly', 'yearly'];
 const isStr = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -15,55 +17,13 @@ const publicUser = ({ passwordHash, ...u }) => u;
 function createApp(store) {
   const app = express();
   app.use(express.json());
-  const s = () => store.settings;
-  const actor = (req) => `${req.user.role}:${req.user.username}`;
-  const staffAdmin = [authenticate, requireRole('admin')];
-  const staffMgr = [authenticate, requireRole('admin', 'manager')];
 
-  // ---------- helpers ----------
-  const canSeeChild = (req, child, group) => {
-    const { role, id, staffId } = req.user;
-    if (role === 'admin' || role === 'manager') return true;
-    if (role === 'parent') return child.parentId === id;
-    return Boolean(group && (group.educatorId === staffId || group.assistantId === staffId));
-  };
-  const getChild = async (req) => {
-    const child = await store.get('children', req.params.id);
-    if (!child) throw notFound('Child not found');
-    const group = child.groupId ? await store.get('groups', child.groupId) : null;
-    if (!canSeeChild(req, child, group)) throw forbidden('Not your child');
-    return child;
-  };
-  const getGroup = async (id) => {
-    const g = await store.get('groups', id);
-    if (!g) throw notFound('Group not found');
-    return g;
-  };
-  const staffOfType = async (id, type, label) => {
-    const st = await store.get('staff', id);
-    if (!st) throw notFound(`${label} not found`);
-    if (st.type !== type) throw bad(`${label} must be staff of type "${type}"`);
-    return st;
-  };
-  const validateDiscount = (d) => {
-    if (!s().allowedDiscounts.includes(d)) {
-      throw bad(`discountPercent must be one of ${s().allowedDiscounts.join(', ')}`);
-    }
-  };
-  const validDate = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}/.test(v) && !Number.isNaN(Date.parse(v));
-  const withAge = (c) => ({ ...c, age: ageOf(c.birthDate) });
-  const requireParent = async (parentId) => {
-    const p = await store.get('users', parentId);
-    if (!p || p.role !== 'parent') throw bad('parentId must reference an existing parent');
-    return p;
-  };
-
-  // ---------- auth ----------
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
   app.post('/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
-    const user = isStr(username) && isStr(password) && await store.one('users', { username });
+    if (!username || !password) throw bad('username and password are required');
+    const user = await store.one('users', { username });
     if (!user || !verifyPassword(password, user.passwordHash)) throw unauthorized('Invalid credentials');
     res.json({ token: signToken(user), user: publicUser(user) });
   });
@@ -72,10 +32,29 @@ function createApp(store) {
     res.json(publicUser(await store.get('users', req.user.id)));
   });
 
-  // ---------- users: managers & parents ----------
-  app.post('/managers', ...staffAdmin, async (req, res) => {
-    const { username, password, name } = req.body || {};
-    if (![username, password, name].every(isStr)) throw bad('username, password, name are required');
+  // Підключаємо новий модуль /children
+  app.use('/children', createChildrenRouter(store));
+
+  const s = () => store.settings;
+  const actor = (req) => `${req.user.role}:${req.user.username}`;
+  const staffAdmin = [authenticate, requireRole('admin')];
+  const staffMgr = [authenticate, requireRole('admin', 'manager')];
+
+  const getGroup = async (id) => {
+    const g = await store.get('groups', id);
+    if (!g) throw notFound('Group not found');
+    return g;
+  };
+
+  const staffOfType = async (id, type, label) => {
+    const st = await store.get('staff', id);
+    if (!st) throw notFound(`${label} not found`);
+    if (st.type !== type) throw bad(`${label} must be staff of type "${type}"`);
+    return st;
+  };
+
+  app.post('/managers', ...staffAdmin, validateManager, async (req, res) => {
+    const { username, password, name } = req.body;
     if (await store.one('users', { username })) throw conflict('Username already exists');
     const u = await store.insert('users', { username, name, role: 'manager', passwordHash: hashPassword(password) }, actor(req));
     res.status(201).json(publicUser(u));
@@ -87,7 +66,6 @@ function createApp(store) {
   // ---------- staff ----------
   app.use('/staff', createStaffRouter(store));
 
-  // ---------- groups ----------
   app.post('/groups', ...staffAdmin, async (req, res) => {
     const { name, age, educatorId, assistantId } = req.body || {};
     if (!isStr(name)) throw bad('name is required');
@@ -106,9 +84,9 @@ function createApp(store) {
     if (req.user.role === 'teacher') {
       groups = groups.filter((g) => g.educatorId === req.user.staffId || g.assistantId === req.user.staffId);
     }
-    const children = await store.list('children');
+    const children = (await store.list('children')) || [];
     res.json(groups.map((g) => ({
-      ...g, childrenCount: children.filter((c) => c.groupId === g.id).length,
+      ...g, childrenCount: children.filter((c) => c && c.groupId === g.id).length,
     })));
   });
 
@@ -156,80 +134,6 @@ function createApp(store) {
     res.json(await store.update('children', child.id, { groupId: null }, actor(req)));
   });
 
-  // ---------- children ----------
-  app.post('/children', ...staffMgr, async (req, res) => {
-    const { name, birthDate, parentId, discountPercent = 0, paymentPlan = 'monthly' } = req.body || {};
-    if (!isStr(name)) throw bad('name is required');
-    if (!validDate(birthDate)) throw bad('birthDate must be a valid date (YYYY-MM-DD)');
-    const age = ageOf(birthDate);
-    if (age < s().minAge || age > s().maxAge) throw bad(`Child age must be between ${s().minAge} and ${s().maxAge}`);
-    const parent = await requireParent(parentId);
-    if (!PLANS.includes(paymentPlan)) throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
-    // фінансові параметри (пільги) може змінювати лише адмін
-    if (discountPercent !== 0 && req.user.role !== 'admin') throw forbidden('Only admin can set discounts');
-    validateDiscount(discountPercent);
-    const c = await store.insert('children', {
-      name, birthDate: birthDate.slice(0, 10), parentId: parent.id, groupId: null, discountPercent, paymentPlan,
-    }, actor(req));
-    res.status(201).json(withAge(c));
-  });
-
-  app.get('/children', authenticate, async (req, res) => {
-    const groups = new Map((await store.list('groups')).map((g) => [g.id, g]));
-    const children = await store.list('children');
-    res.json(children.filter((c) => canSeeChild(req, c, groups.get(c.groupId))).map(withAge));
-  });
-
-  app.get('/children/:id', authenticate, async (req, res) => res.json(withAge(await getChild(req))));
-
-  app.patch('/children/:id', ...staffMgr, async (req, res) => {
-    const c = await getChild(req);
-    const { name, birthDate, parentId, discountPercent, paymentPlan } = req.body || {};
-    const patch = {};
-    if (name !== undefined) { if (!isStr(name)) throw bad('name must be a string'); patch.name = name; }
-    if (birthDate !== undefined) {
-      if (!validDate(birthDate)) throw bad('invalid birthDate');
-      const age = ageOf(birthDate);
-      if (age < s().minAge || age > s().maxAge) throw bad('Child age is out of range');
-      if (c.groupId && age !== (await getGroup(c.groupId)).age) throw conflict('New age does not match the child group');
-      patch.birthDate = birthDate.slice(0, 10);
-    }
-    if (parentId !== undefined) patch.parentId = (await requireParent(parentId)).id;
-    if (discountPercent !== undefined || paymentPlan !== undefined) {
-      if (req.user.role !== 'admin') throw forbidden('Only admin can change financial parameters');
-      if (discountPercent !== undefined) { validateDiscount(discountPercent); patch.discountPercent = discountPercent; }
-      if (paymentPlan !== undefined) {
-        if (!PLANS.includes(paymentPlan)) throw bad(`paymentPlan must be one of ${PLANS.join(', ')}`);
-        patch.paymentPlan = paymentPlan;
-      }
-    }
-    res.json(withAge(await store.update('children', c.id, patch, actor(req))));
-  });
-
-  app.delete('/children/:id', ...staffAdmin, async (req, res) => {
-    const c = await store.get('children', req.params.id);
-    if (!c) throw notFound('Child not found');
-    await store.remove('children', c.id, actor(req));
-    res.status(204).end();
-  });
-
-  app.get('/children/:id/billing', authenticate, requireRole('admin', 'manager', 'parent'), async (req, res) => {
-    const c = await getChild(req);
-    const { months, plan, workDays } = req.query;
-    if (plan !== undefined && !PLANS.includes(plan)) throw bad(`plan must be one of ${PLANS.join(', ')}`);
-    const m = months === undefined ? undefined : Number(months);
-    if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= 12)) throw bad('months must be an integer 1..12');
-    const w = workDays === undefined ? undefined : Number(workDays);
-    if (w !== undefined && !(Number.isInteger(w) && w >= 1 && w <= 31)) throw bad('workDays must be an integer 1..31');
-    res.json(calcBilling(c, s(), { months: m, plan, workDays: w }));
-  });
-
-  app.get('/children/:id/schedule', authenticate, async (req, res) => {
-    const c = await getChild(req);
-    res.json(viewSchedule(await store.getSchedule(), c.groupId ? [c.groupId] : []));
-  });
-
-  // ---------- schedule ----------
   app.post('/schedule/generate', ...staffMgr, async (req, res) => {
     const groups = await store.list('groups');
     if (!groups.length) throw conflict('No groups to schedule');
@@ -250,7 +154,6 @@ function createApp(store) {
     return res.json(viewSchedule(schedule, ids));
   });
 
-  // ---------- finance ----------
   app.get('/profit', ...staffAdmin, async (req, res) => res.json(await calcProfit(store)));
 
   app.get('/profit/groups/:id', ...staffAdmin, async (req, res) => {
@@ -260,7 +163,6 @@ function createApp(store) {
 
   app.get('/optimization', ...staffAdmin, async (req, res) => res.json(await optimize(store)));
 
-  // ---------- settings & history ----------
   app.get('/settings', ...staffMgr, (req, res) => res.json(s()));
 
   app.patch('/settings', ...staffAdmin, async (req, res) => {
@@ -287,15 +189,13 @@ function createApp(store) {
     res.json(await store.getHistory({ collection, id }));
   });
 
-  // ---------- errors ----------
   app.use((req, res, next) => next(notFound('Route not found')));
-  // eslint-disable-next-line no-unused-vars
+
   app.use((err, req, res, next) => {
     if (err instanceof HttpError) {
       return res.status(err.status).json({ error: err.message, details: err.details });
     }
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
-    // помилки PostgreSQL
     if (err.code === '23505') return res.status(409).json({ error: 'Record already exists' });
     if (err.code === '23503') return res.status(409).json({ error: 'Related record conflict' });
     if (err.code === '23514' || err.code === '22P02' || err.code === '22003') {
